@@ -1,0 +1,8 @@
+{
+    "makefile.configureOnOpen": true,
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/src",
+        "${workspaceFolder}/../Zeal-8-bit-OS/kernel_headers/sdcc/include",
+        "${workspaceFolder}/../Zeal-VideoBoard-SDK/include"
+    ]
+}
