@@ -36,7 +36,7 @@
 #include "../img/title.h"
 #include "Night in Tokyo.h"
 
-#define FONT_COLOR 31
+#define FONT_COLOR 255
 #define FONT_PALETTE_BASE 0
 
 gfx_context ctx;
@@ -93,10 +93,11 @@ void draw_tileset_char(uint8_t c)
                 // Magnified pixel
                 font_tile[offset+0x10] = FONT_COLOR;  // Text color
                 font_tile[offset+0x11] = FONT_COLOR;  // Background color
-                font_tile[offset++] = FONT_COLOR;  // Text color
-                font_tile[offset++] = FONT_COLOR;  // Background color
+                font_tile[offset] = FONT_COLOR;  // Text color
+                font_tile[offset+1] = FONT_COLOR;  // Background color
             }
             mask >>= 1;
+            offset+=2;
         }
         offset+=0x10;
     }
@@ -237,6 +238,7 @@ void set_game_state(enum GameState new_state) {
     switch(current_state) {
         case STATE_GAME:
             game_init();
+            game_start();
             break;
         case STATE_MENU:
             //menu_init();
@@ -297,16 +299,12 @@ uint8_t handle_input(uint8_t key)
         case KB_ESC:
             done = true;
             return MAX_INPUT;
-        case KB_KEY_W:
         case KB_UP_ARROW:
             return INPUT_UP;
-        case KB_KEY_S:
         case KB_DOWN_ARROW:
             return INPUT_DOWN;
-        case KB_KEY_A:
         case KB_LEFT_ARROW:
             return INPUT_LEFT;
-        case KB_KEY_D:
         case KB_RIGHT_ARROW:
             return INPUT_RIGHT;
         case KB_KEY_V:
@@ -316,10 +314,10 @@ uint8_t handle_input(uint8_t key)
         case KB_KEY_B:
             return INPUT_B;
         case KB_KEY_COMMA:
-        case KB_KEY_X:
+        case KB_KEY_C:
             return INPUT_X;
         case KB_KEY_PERIOD:
-        case KB_KEY_Y:
+        case KB_KEY_P:
             return INPUT_Y;
         case KB_KEY_ENTER:
             return INPUT_START;
@@ -327,7 +325,7 @@ uint8_t handle_input(uint8_t key)
         case KB_RIGHT_SHIFT:
             return INPUT_SELECT;
         case KB_KEY_LEFT_BRACKET:
-        case KB_KEY_Q:
+        case KB_KEY_S:
             return INPUT_L;
         case KB_KEY_RIGHT_BRACKET:
         case KB_KEY_E:
@@ -427,7 +425,7 @@ int main(int argc, char *argv[]) {
         // Render game and menu
         switch(current_state) {
             case STATE_GAME:
-                game_render();
+                game_paint();
                 break;
             case STATE_MENU:
                 //menu_render();

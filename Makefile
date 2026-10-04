@@ -36,7 +36,7 @@ img/%.zts: img/%.gif
 img/title.zts: img/title.gif
 	$(ZVB_SDK_PATH)/tools/zeal2gif/gif2zeal.py -b 1 -i $<
 
-obj/lemons.rel: src/lemons.c src/main.h
+obj/lemons.rel: src/lemons.c src/main.h src/game.h
 #obj/menu.rel: src/menu.c src/menu.h src/game.h src/sound.h
 obj/main.rel: src/main.c img/title.h
 #obj/sound.rel: src/sound.c src/sound.h

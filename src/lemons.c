@@ -13,6 +13,7 @@
 #include <zvb_gfx.h>
 
 #include "main.h"
+#include "game.h"
 
 enum {
 	BGTILE=0,
@@ -23,17 +24,26 @@ enum {
 	BADTILE=5,
 	ENTERANCE=6,
 	EXITDOOR=7,
-	TILECOUNT=8
+	CURSORTILE=8,
+	TILECOUNT=9
 };
 
+/* Tiles are 16x16 pixels, one hardware tile each; only sprites are placed by pixel. */
 enum {
 	TILEWIDTH=16,
 	TILEHEIGHT=16,
 	TILESACROSS=32,
-	TILESDOWN=16
+	TILESDOWN=16,
+	SCREENCOLS=40
 };
 
 enum { MAXLEMON=50 };
+
+/* Game time between lemon moves, and moves between lemons entering */
+enum {
+	TICKMS=200,
+	DROPTICKS=5
+};
 
 enum {
 	S_INACTIVE=0,
@@ -207,6 +217,26 @@ const char tile[TILECOUNT][TILEWIDTH*TILEHEIGHT] = {
 	0,6,6,6, 6,6,6,6, 6,6,6,6, 6,6,6,0,
 	0,6,6,6, 6,6,6,6, 6,6,6,6, 6,6,6,0,
 	0,6,6,6, 6,6,6,6, 6,6,6,6, 6,6,6,0,
+},{ /* CURSORTILE */
+	7,7,7,7, 7,7,7,7, 7,7,7,7, 7,7,7,7,
+	7,7,7,7, 7,7,7,7, 7,7,7,7, 7,7,7,7,
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+	7,7,0,0, 0,0,0,0, 0,0,0,0, 0,0,7,7,
+	7,7,7,7, 7,7,7,7, 7,7,7,7, 7,7,7,7,
+	7,7,7,7, 7,7,7,7, 7,7,7,7, 7,7,7,7,
 } };
 
 enum {
@@ -291,15 +321,28 @@ int lemonExplode[MAXLEMON];
 
 bool invalid[TILESACROSS*TILESDOWN];
 
+/* Cursor position in tiles; only its sprite is placed by pixel */
+int cursorX=0,cursorY=0;
+bool titleScreen=true;
+bool mazeWait=false;
+bool needFull=true;
+bool dirty=true;
+uint16_t tickTimer=0;
+int dropTimer=1;
 
-
-void resetmaze(char *template[TILESDOWN])
+void resetmaze(const char *template[TILESDOWN])
 {
 	int i,j;
 
 	active=0;
 	next=0;
 	rescued=0;
+	selected=-1;
+	tickTimer=0;
+	dropTimer=1;
+	memset(invalid,0,sizeof(invalid));
+	needFull=true;
+	dirty=true;
 
 	for(j=0;j<TILESDOWN;j++) {
 		for(i=0;i<TILESACROSS;i++) {
@@ -314,95 +357,121 @@ void resetmaze(char *template[TILESDOWN])
 			}
 		}
 	}
+	cursorX=enterX;
+	cursorY=enterY;
 }
 
 void rendertile(int col,int row,int id)
 {
+	gfx_tilemap_place(&ctx, id, 0, col, row);
+}
+
+/* Draw one line of text on the tilemap; ASCII codes are tile indexes */
+void print_row(int row,const char *text)
+{
+	uint8_t line[SCREENCOLS];
 	int i;
-	int x,y;
-	uint8_t buffer[1];
 
-	x=col; //*TILEWIDTH;
-	y=row; //*TILEHEIGHT;
-
-	//g.setColor(new Color(palette[id]));
-	//g.fillRect(x,y,TILEWIDTH,TILEHEIGHT);
-	//zvb_gfx_draw_image(ctx, tileImage[id], x, y);
-	buffer[0] = id;
-	show_map(buffer, x, y);
-
-	//System.out.println("Tile "+col+","+row+": "+id);
+	memset(line,' ',sizeof(line));
+	for(i=0;i<SCREENCOLS && text[i];i++) line[i]=text[i];
+	gfx_tilemap_load(&ctx, line, SCREENCOLS, 0, 0, row);
 }
 
-void renderinfo()
+void print_col(int row,const char *text)
 {
-	char buffer[256];
-	memset(buffer, 0, sizeof(buffer));
-	show_map_xy(buffer,80,2,0,TILESDOWN);
-	// Now 4 lines of status text
-	sprintf(buffer, "Lemons Status - %d of %d. %d rescued. %d left.", next, MAXLEMON, rescued, active);
-	show_map_xy(buffer,strlen(buffer),1,5,TILEHEIGHT*TILESDOWN+TILEHEIGHT/2);
-	if(selected!=-1 && lemonType[selected]!=S_INACTIVE) {
-		char s[128];
-		sprintf(s, "Selected lemon %d: ", selected);
-		switch(lemonType[selected]) {
-		case S_WALK: strcat(s, "Walk"); break;
-		case S_CLIMB: strcat(s, "Climb"); break;
-		case S_PARACHUTE: strcat(s, "Parachute"); break;
-		case S_PARACLIMB: strcat(s, "Paraclimb"); break;
-		case S_BUILD: strcat(s, "Build"); break;
-		case S_EXPLODE: strcat(s, "Explode"); break;
-		case S_STOP: strcat(s, "Stop"); break;
-		}
-		sprintf(s + strlen(s), " @%d,%d", lemonX[selected], lemonY[selected]);
-		show_map_xy(s,strlen(s),1,5,TILEHEIGHT*TILESDOWN+TILEHEIGHT);
+	uint8_t line[SCREENCOLS];
+	int i;
+
+	memset(line,' ',sizeof(line));
+	for(i=0;i<SCREENCOLS && text[i];i++) line[i]=text[i];
+	gfx_tilemap_load(&ctx, line, SCREENCOLS, 0, TILESACROSS, row);
+}
+
+const char *statename(int type)
+{
+	switch(type) {
+	case S_WALK: return "Walk";
+	case S_CLIMB: return "Climb";
+	case S_PARACHUTE: return "Parachute";
+	case S_PARACLIMB: return "Paraclimb";
+	case S_BUILD: return "Build";
+	case S_EXPLODE: return "Explode";
+	case S_STOP: return "Stop";
+	}
+	return "";
+}
+
+/* Status text goes in the tile rows below the maze */
+void renderinfo(void)
+{
+	char s[64];
+
+	sprintf(s, "Lemons - %d of %d. %d rescued. %d left.", next, MAXLEMON, rescued, active);
+	print_row(TILESDOWN,s);
+	if(titleScreen) {
+		strcpy(s, "Press space to start");
+	} else if(mazeWait) {
+		strcpy(s, "Level done. Press space for next");
+	} else if(selected!=-1 && lemonType[selected]!=S_INACTIVE) {
+		sprintf(s, "Selected lemon %d: %s @%d,%d", selected, statename(lemonType[selected]), lemonX[selected], lemonY[selected]);
 	} else {
-		show_map_xy("No lemons selected",strlen("No lemons selected"),1,5,TILEHEIGHT*TILESDOWN+TILEHEIGHT);
+		strcpy(s, "No lemons selected");
 	}
-	show_map_xy("b - Build | c - Climb | e - Explode",strlen("b - Build | c - Climb | e - Explode"),1,5,TILEHEIGHT*TILESDOWN+TILEHEIGHT*3/2);
-	show_map_xy("p - Parachute | s - Stop",strlen("p - Parachute | s - Stop"),1,5,TILEHEIGHT*TILESDOWN+TILEHEIGHT*2);	
+	print_row(TILESDOWN+1,s);
+	print_col(0,"Controls:");
+	print_col(2,"B)uild");
+	print_col(3,"C)limb");
+	print_col(4,"E)xplode");
+	print_col(5,"P)ara-");
+	print_col(6,"chute");
+	print_col(7,"S)top");
+	print_col(9,"Arrows - ");
+	print_col(10,"Cursor");
+	print_col(12,"Space - ");
+	print_col(13,"Select");
 }
 
-void rendermaze()
+void rendermaze(void)
 {
-	int i,j,k;
-	int id;
+	int j,k;
+
 	for(j=0;j<TILESDOWN;j++) {
-		for(i=0;i<TILESACROSS;i++) {
-			id=maze[j*TILESACROSS+i];
-			for(k=0;k<next;k++) {
-				if(i==lemonX[k] && j==lemonY[k] && lemonType[k]!=S_INACTIVE) {
-					id=(k==selected)?BADG:HERO;
-					if(k==selected) break;
-				}
-			}
-			rendertile(i,j,id);
+		gfx_tilemap_load(&ctx, &maze[j*TILESACROSS], TILESACROSS, 0, 0, j);
+	}
+	for(k=0;k<next;k++) {
+		if(lemonType[k]!=S_INACTIVE) rendertile(lemonX[k],lemonY[k],HERO);
+	}
+	if(selected!=-1 && lemonType[selected]!=S_INACTIVE) {
+		rendertile(lemonX[selected],lemonY[selected],BADG);
+	}
+}
+
+int cellid(int x,int y)
+{
+	int k,id=maze[y*TILESACROSS+x];
+
+	for(k=0;k<next;k++) {
+		if(x==lemonX[k] && y==lemonY[k] && lemonType[k]!=S_INACTIVE) {
+			if(k==selected) return BADG;
+			id=HERO;
 		}
 	}
+	return id;
 }
 
-void updateState()
+void updateState(void)
 {
-	int id,x,y,row,k;
+	int x,y,row;
 
 	for(y=0;y<TILESDOWN;y++) {
 		row=y*TILESACROSS;
 		for(x=0;x<TILESACROSS;x++) {
 			if(invalid[row+x]) {
-				id=maze[y*TILESACROSS+x];
-				for(k=0;k<next;k++) {
-					if(x==lemonX[k] && y==lemonY[k] && lemonType[k]!=S_INACTIVE) {
-						id=(k==selected)?BADG:HERO;
-						if(k==selected) break;
-					}
-				}
-				rendertile(x,y,id);
-				//repaint(x*TILEWIDTH,y*TILEHEIGHT,TILEWIDTH,TILEHEIGHT);
+				rendertile(x,y,cellid(x,y));
 				invalid[row+x]=false;
 			}
 		}
 	}
-//	repaint(0,TILEHEIGHT*TILESDOWN,TILEWIDTH*TILESACROSS,TILEHEIGHT*2);
 }
 
 void nextStateId(int id);
@@ -424,9 +493,7 @@ void nextState()
 	
 void nextStateId(int id)
 {
-	int r=rand()%4;
-	int dist,x,y,dir;
-	int min,max;
+	int x,y,dir;
 
 	x=lemonX[id];
 	y=lemonY[id];
@@ -493,6 +560,8 @@ void nextStateId(int id)
 			//System.out.println("..E: kaboom!");
 			for(dy=y-1;dy<=y+1;dy++) {
 			for(dx=x-1;dx<=x+1;dx++) {
+				/* Keep the left, right and top border so lemons stay inside the maze array */
+				if(dx<1 || dx>=TILESACROSS-1 || dy<1) continue;
 				maze[dy*TILESACROSS+dx]=BACK;
 				invalid[dy*TILESACROSS+dx]=true;
 			} }
@@ -670,43 +739,37 @@ const uint16_t palette[]={
 	(uint16_t)RGB888_TO_RGB565(0xff,0xff,0),
 	(uint16_t)RGB888_TO_RGB565(0xff,0,0xff),
 	(uint16_t)RGB888_TO_RGB565(0xff,0xff,0xff) };
-enum { PALETTECOUNT=8 };
-
-bool endRun;
-bool titleScreen=true;
-int tileData[TILEWIDTH*TILEHEIGHT*8];
 
 void game_init(void)
 {
-	int i,j;
-	resetmaze(maze0);
-	titleScreen=true;
+	int i;
 
-	for(i=0;i<PALETTECOUNT;i++) {
-		gfx_palette_load(&ctx, palette, sizeof(palette), 0);
-	}
+	titleScreen=true;
+	mazeWait=false;
+	resetmaze(maze0);
+
+	gfx_palette_load(&ctx, palette, sizeof(palette), 0);
 	for(i=0;i<TILECOUNT;i++) {
 		gfx_tileset_options options1 = {TILESET_COMP_NONE, i*256, 0, 0};
         gfx_tileset_load(&ctx, tile[i], 256, &options1);
 	}
-	endRun=false;
 }
 
 void game_start(void)
 {
 	rendermaze();
+	renderinfo();
+	needFull=false;
+	dirty=false;
 }
 
-void game_destroy(void)
+void game_update(uint16_t delta)
 {
-	endRun=true;
-}
+	if(titleScreen || mazeWait) return;
 
-bool mazeWait=false;
-
-void game_update(void) 
-{
-	int dropTimer=1;
+	tickTimer+=delta;
+	if(tickTimer<TICKMS) return;
+	tickTimer-=TICKMS;
 
 	if(next<MAXLEMON) {
 		if(dropTimer==0) {
@@ -720,7 +783,7 @@ void game_update(void)
 			next++;
 			active++;
 			//System.out.println("Added lemon "+next+" at "+enterX+","+enterY);
-			dropTimer=5;
+			dropTimer=DROPTICKS;
 		} else {
 			dropTimer--;
 		}
@@ -728,10 +791,7 @@ void game_update(void)
 
 	// Calculate the next round
 	nextState();
-
-	// Update display
-	//System.out.println("Rendering."+active+"/"+rescued+"/"+next+"/"+MAXLEMON);
-	updateState();
+	dirty=true;
 
 	// With victory prepare next level.
 	if(next==MAXLEMON && active==0) {
@@ -739,21 +799,77 @@ void game_update(void)
 	}
 }
 
-void game_paint()
+void game_paint(void)
 {
-	rendermaze();
-	renderinfo();
+	if(needFull) {
+		rendermaze();
+		needFull=false;
+	} else if(dirty) {
+		updateState();
+	}
+	if(dirty) {
+		renderinfo();
+		dirty=false;
+	}
+
+	reset_sprite();
+	if(!titleScreen && !mazeWait) {
+		// Sprites are the one thing placed in pixels
+		add_sprite(cursorX*TILEWIDTH, cursorY*TILEHEIGHT, CURSORTILE, SPRITE_FLAG_NONE);
+	}
+	render_sprites();
 }
 
-bool keyUp(int key)
+void select_lemon(void)
 {
-	//System.out.println("Handling Key: "+key);
-	if(selected==-1 || lemonType[selected]==S_INACTIVE) {
-		return false;
+	int id;
+	int old=selected;
+
+	selected=-1;
+	for(id=0;id<next && selected==-1;id++) {
+		if(lemonType[id]!=S_INACTIVE && lemonX[id]==cursorX && lemonY[id]==cursorY) {
+			selected=id;
+		}
 	}
-	//System.out.println("Key: "+key);
-	switch(key) {
-	case 'c':
+	/* Now look for the nearest lemon (any within one square would do) */
+	for(id=0;id<next && selected==-1;id++) {
+		if(lemonType[id]!=S_INACTIVE && abs(lemonX[id]-cursorX)<2 && abs(lemonY[id]-cursorY)<2) {
+			selected=id;
+		}
+	}
+
+	if(old!=-1) invalid[lemonY[old]*TILESACROSS+lemonX[old]]=true;
+	if(selected!=-1) invalid[lemonY[selected]*TILESACROSS+lemonX[selected]]=true;
+	dirty=true;
+}
+
+void game_handle_input(uint8_t input, bool pressed)
+{
+	if(!pressed) return;
+
+	if(titleScreen || mazeWait) {
+		if(input==INPUT_A || input==INPUT_START) {
+			resetmaze(titleScreen?maze1:maze2);
+			titleScreen=false;
+			mazeWait=false;
+		}
+		return;
+	}
+
+	switch(input) {
+	case INPUT_LEFT: if(cursorX>0) cursorX--; return;
+	case INPUT_RIGHT: if(cursorX<TILESACROSS-1) cursorX++; return;
+	case INPUT_UP: if(cursorY>0) cursorY--; return;
+	case INPUT_DOWN: if(cursorY<TILESDOWN-1) cursorY++; return;
+	case INPUT_A: select_lemon(); return;
+	}
+
+	if(selected==-1 || lemonType[selected]==S_INACTIVE) {
+		return;
+	}
+	dirty=true;
+	switch(input) {
+	case INPUT_X:
 		debug_log("climber!");
 		if(lemonType[selected]==S_PARACHUTE) {
 			lemonType[selected]=S_PARACLIMB;
@@ -761,7 +877,7 @@ bool keyUp(int key)
 			lemonType[selected]=S_CLIMB;
 		}
 		break;
-	case 'p':
+	case INPUT_Y:
 		debug_log("parachute!");
 		if(lemonType[selected]==S_CLIMB) {
 			lemonType[selected]=S_PARACLIMB;
@@ -769,55 +885,17 @@ bool keyUp(int key)
 			lemonType[selected]=S_PARACHUTE;
 		}
 		break;
-	case 'b':
+	case INPUT_B:
 		debug_log("build!");
 		lemonType[selected]=S_BUILD;
 		break;
-	case 's':
+	case INPUT_L:
 		debug_log("stop!");
 		lemonType[selected]=S_STOP;
 		break;
-	case 'e':
+	case INPUT_R:
 		debug_log("explode!");
 		lemonType[selected]=S_EXPLODE;
 		break;
 	}	
-	return true;
-}
-
-bool mouseUp(int x, int y)
-{
-	int id;
-	int cx=x/TILEWIDTH,cy=y/TILEHEIGHT;
-
-	if(titleScreen) {		
-		resetmaze(maze1);
-		//repaint();
-		//new Thread(this).start();
-		titleScreen=false;
-	}
-	if(mazeWait) {		
-		resetmaze(maze2);
-		//repaint();
-		//new Thread(this).start();
-		mazeWait=false;
-	}
-	selected=-1;
-	for(id=0;id<next;id++) {
-		if(lemonType[id]!=S_INACTIVE && lemonX[id]==cx && lemonY[id]==cy) {
-			selected=id;
-			invalid[lemonY[id]*TILESACROSS+lemonX[id]]=true;
-			return true;
-		}
-	}
-	/* Now look for the nearest lemon (any within one square would do) */
-	for(id=0;id<next;id++) {
-		if(lemonType[id]!=S_INACTIVE && (lemonX[id]<cx?cx-lemonX[id]:lemonX[id]-cx)<2 && (lemonY[id]<cy?cy-lemonY[id]:lemonY[id]-cy)<2) {
-			selected=id;
-			invalid[lemonY[id]*TILESACROSS+lemonX[id]]=true;
-			return true;
-		}
-	}
-
-	return false;
 }
