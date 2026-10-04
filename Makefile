@@ -2,7 +2,6 @@ ZOS_PATH ?= ../Zeal-8-bit-OS
 ZVB_SDK_PATH ?= ../Zeal-VideoBoard-SDK
 BIN=bin/lemons.bin
 OBJ=obj/main.rel obj/lemons.rel
-IMG=img/pillboxtiles.zts
 CC=sdcc
 CFLAGS=-mz80 --std-c2x -c -I $(ZOS_PATH)/kernel_headers/sdcc/include/ -I $(ZVB_SDK_PATH)/include --codeseg TEXT --debug
 AS=sdasz80 -o -l -s
@@ -30,23 +29,13 @@ obj/%.rel: src/%.c
 obj/%.rel: src/%.asm
 	$(AS) $@ $<
 
-img/%.zts: img/%.gif
-	$(ZVB_SDK_PATH)/tools/zeal2gif/gif2zeal.py -z lz -i $<
-
-img/title.zts: img/title.gif
-	$(ZVB_SDK_PATH)/tools/zeal2gif/gif2zeal.py -b 1 -i $<
-
 obj/lemons.rel: src/lemons.c src/main.h src/game.h
 #obj/menu.rel: src/menu.c src/menu.h src/game.h src/sound.h
-obj/main.rel: src/main.c img/title.h
+obj/main.rel: src/main.c
 #obj/sound.rel: src/sound.c src/sound.h
-#obj/img.rel: src/img.asm $(IMG)
 
 clean:
 	-rm $(OBJ)
 	-rm $(BIN)
 	-rm obj/*.lst obj/*.sym obj/*.adb obj/*.asm
 	-rm bin/*.ihx bin/*.noi bin/*.map bin/*.cdb
-
-reallyclean: clean
-	-rm img/*.zts img/*.ztp

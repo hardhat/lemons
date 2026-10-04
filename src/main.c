@@ -30,10 +30,7 @@
 
 #include "main.h"
 #include "game.h"
-//#include "menu.h"
-//#include "img.h"
 //#include "sound.h"
-#include "../img/title.h"
 #include "Night in Tokyo.h"
 
 #define FONT_COLOR 255
@@ -122,7 +119,7 @@ void initialize_graphics() {
     debug_log("Initializing...");
 
     // Initialize the graphics context
-    // Set to tiled 320x240 mode
+    // Set to tiled 640x480 mode
     gfx_initialize(ZVB_CTRL_VID_MODE_GFX_640_8BIT, &ctx);
 
     char mapline[80];
@@ -135,56 +132,12 @@ void initialize_graphics() {
     }
     gfx_tileset_add_color_tile(&ctx,254,254);
     gfx_tileset_add_color_tile(&ctx,255,255);
-    //for(int x=0;x<20;x++) gfx_tilemap_place(&ctx,254,0,x,7);
-    //debug_log("Clear sprites");
     clear_sprites();
-    //for(int x=0;x<5;x++) gfx_tilemap_place(&ctx,255,0,x,7);
-    
-    // gfx_tileset_options options0 = {TILESET_COMP_LZ, TILESET_TILES_BASE*256, TILESET_PALETTE_BASE, 0};
-    // gfx_palette_load(&ctx, tileset_palette, tileset_palette_len, TILESET_PALETTE_BASE);
     const uint16_t solid_color[2]={(uint16_t)RGB888_TO_RGB565(0xF,0xF,0x00),(uint16_t)RGB888_TO_RGB565(0xE0,0xE0,0x00)}; // Yellow and dark yellow
     gfx_palette_load(&ctx,solid_color,4,254);
-    //const uint16_t black[1]={RGB888_TO_RGB565(0x30,0x30,0x30)};
-    //gfx_palette_load(&ctx,black,2,0);
-
-    // Generate a 2x2 grid of 8x8 dots to blow up the 40x16 pixel title into a 20x8 tilemap
-    const char circle[8] = {0x18, 0x3C, 0x7E, 0xFF, 0xFF, 0x7E, 0x3C, 0x18};
-    memset(buffer, 0, sizeof(buffer));
-    for(uint8_t k=0;k<16;k++) {
-        for(uint8_t bit=0;bit<4;bit++) {
-            uint8_t color = (k & (1 << bit)) ? 0xFF : 0xFE; // Use 0xFF for white, 0xFE for light gray
-            uint8_t offset = ((bit & 1)?8:0) + ((bit & 2)?128:0);
-
-            for(uint8_t i=0;i<8;i++) {
-                uint8_t mask=128;
-                for(uint8_t j=0;j<8;j++) {
-                    buffer[offset+(i<<4)+j] = (circle[i] & mask) ? color : 0x00;
-                    mask >>= 1;
-                }
-            }
-        }
-        gfx_tileset_options options1 = {TILESET_COMP_NONE, (192+k)*256, 0, 0};
-        gfx_tileset_load(&ctx, buffer, 256, &options1);
-    }
-
-    // Generate title from title.zts
-    memset(buffer, 0, sizeof(buffer));
-    for(int y=0;y<16;y++) {
-        for(int x=0;x<40;x++) {
-            // Tile bits are one-hot per quadrant (bit0=TL,bit1=TR,bit2=BL,bit3=BR), not a plain index
-            buffer[80+(y>>1)*20+(x>>1)] |= 192 | (header_data[y*40+x] ? (1 << ((x&1)+(y&1)*2)) : 0);
-        }
-    }
-    show_map_xy(buffer,20,12,10,4);
 
     draw_ascii();
-    //for(int x=5;x<10;x++) gfx_tilemap_place(&ctx,255,0,x,7);
-    //debug_log("Loading tiles");
-    //gfx_tileset_load(&ctx, tileset_tiles, tileset_tiles_len, &options0);
-
-    //for(int x=10;x<15;x++) gfx_tilemap_place(&ctx,255,0,x,7);
     debug_log("Initalized.");
-    //for(int x=15;x<20;x++) gfx_tilemap_place(&ctx,255,0,x,7);
 }
 
 void show_map(uint8_t *map,uint8_t width,uint8_t height)
